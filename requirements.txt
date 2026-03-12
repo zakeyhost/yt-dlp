@@ -1,1 +1,2 @@
-curl_cffi
+yt-dlp
+pytubefix
