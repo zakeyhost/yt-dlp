@@ -9,7 +9,10 @@ OUTPUT_FILENAME = "test_video.mp4"
 
 def download_direct(url, filename):
     print("⬇️ Streaming MP4 directly to GitHub Runner...")
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Referer": "https://downr.org/"
+    }
     try:
         with requests.get(url, stream=True, headers=headers, timeout=60) as r:
             r.raise_for_status()
@@ -25,55 +28,12 @@ def download_direct(url, filename):
         print(f"❌ Direct stream failed: {e}")
     return False
 
-def approach_1_cobalt_api_fixed():
+async def approach_1_downr_stealth():
     print("\n" + "="*50)
-    print("👻 APPROACH 1: Cobalt Official API (Fixed Security Headers)")
-    print("="*50)
-    
-    # Cobalt now requires strict headers to prove it's a legitimate request
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-        "Origin": "https://cobalt.tools",
-        "Referer": "https://cobalt.tools/",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-    }
-    payload = {
-        "url": TEST_VIDEO_URL,
-        "vQuality": "1080",
-        "filenamePattern": "classic"
-    }
-    
-    instances = [
-        "https://api.cobalt.tools", 
-        "https://cobalt.envy.wtf",
-        "https://api.cobalt.lol"
-    ]
-    
-    for instance in instances:
-        print(f"🔌 Connecting to Cobalt instance: {instance}...")
-        try:
-            res = requests.post(instance, json=payload, headers=headers, timeout=15)
-            if res.status_code in [200, 201, 202]:
-                data = res.json()
-                if 'url' in data:
-                    print("✅ Cobalt successfully bypassed YouTube! Extracted raw MP4 link.")
-                    return download_direct(data['url'], OUTPUT_FILENAME)
-            else:
-                print(f"⚠️ Instance failed with status: {res.status_code}. Response: {res.text[:100]}")
-        except Exception as e:
-            print(f"⚠️ Instance unreachable: {e}")
-            
-    print("❌ All Cobalt API instances blocked or overloaded.")
-    return False
-
-async def approach_2_downr_stealth():
-    print("\n" + "="*50)
-    print("🤖 APPROACH 2: downr.org Scraper (Playwright Stealth Mode)")
+    print("🤖 APPROACH 1: downr.org Scraper (Playwright Stealth Mode)")
     print("="*50)
     
     async with async_playwright() as p:
-        # The arguments below hide the fact that this is an automated bot from Cloudflare
         browser = await p.chromium.launch(
             headless=True,
             args=["--disable-blink-features=AutomationControlled"]
@@ -92,27 +52,67 @@ async def approach_2_downr_stealth():
             await page.get_by_placeholder("Paste URL here").fill(TEST_VIDEO_URL)
             
             print("🖱️ Clicking Download button...")
-            await page.get_by_role("button", name="Download").click()
+            # STRICT MODE FIX: We target the main button and force it to only pick the first one it sees.
+            await page.locator('button', has_text="Download").first.click()
             
             print("⏳ Waiting for backend processing to generate links (Max 45s)...")
-            # Wait for the specific section containing "mp4" to render
             await page.wait_for_selector('text="mp4 ("', timeout=45000)
             
             # Target the exact buttons from your screenshot, prioritizing 1080p
             for quality in ["1080p", "720p", "480p", "360p"]:
                 print(f"🔍 Looking for 'mp4 ({quality})' button...")
-                target_text = f"mp4 ({quality})"
-                element = await page.query_selector(f'text="{target_text}"')
                 
-                if element:
+                # Look for an 'a' (link) tag that contains the exact text
+                element = page.locator(f'a:has-text("mp4 ({quality})")').first
+                
+                if await element.count() > 0:
                     download_url = await element.get_attribute("href")
                     if download_url and "http" in download_url:
                         print(f"🔗 BINGO! Extracted raw MP4 link ({quality})!")
-                        return download_direct(download_url, OUTPUT_FILENAME)
+                        if download_direct(download_url, OUTPUT_FILENAME):
+                            return True
                     
             print("❌ Could not extract the hidden href link from the buttons.")
         except Exception as e:
             print(f"❌ downr.org Scraper failed: {e}")
+        finally:
+            await browser.close()
+    return False
+
+async def approach_2_cobalt_web():
+    print("\n" + "="*50)
+    print("🤖 APPROACH 2: Cobalt WEB UI (Dynamic Locator Fix)")
+    print("="*50)
+    
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        context = await browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        )
+        page = await context.new_page()
+        
+        try:
+            print("🌐 Navigating to Cobalt.tools web interface...")
+            await page.goto("https://cobalt.tools/", timeout=30000)
+            
+            print("⌨️ Typing video URL into the box...")
+            # DYNAMIC FIX: Cobalt changed their input ID. This finds ANY url input box.
+            await page.locator('input[type="url"], input[name="url"], input').first.fill(TEST_VIDEO_URL)
+            await page.keyboard.press("Enter")
+            print("⏳ Waiting for processing (bypassing CAPTCHAs natively)...")
+
+            # Wait for the download to automatically trigger
+            async with page.expect_download(timeout=60000) as download_info:
+                download = await download_info.value
+                print(f"⬇️ Intercepted Download! Saving to {OUTPUT_FILENAME}...")
+                await download.save_as(OUTPUT_FILENAME)
+
+            if os.path.exists(OUTPUT_FILENAME):
+                file_size_mb = os.path.getsize(OUTPUT_FILENAME) / (1024 * 1024)
+                print(f"✅ SUCCESS! Playwright extracted the video. Size: {file_size_mb:.2f} MB")
+                return True
+        except Exception as e:
+            print(f"❌ Cobalt Web Scraper failed: {e}")
         finally:
             await browser.close()
     return False
@@ -123,10 +123,10 @@ def main():
     if os.path.exists(OUTPUT_FILENAME):
         os.remove(OUTPUT_FILENAME)
         
-    if approach_1_cobalt_api_fixed():
+    if asyncio.run(approach_1_downr_stealth()):
         sys.exit(0)
         
-    if asyncio.run(approach_2_downr_stealth()):
+    if asyncio.run(approach_2_cobalt_web()):
         sys.exit(0)
         
     print("\n💀 ALL BROWSER-SCRAPING APPROACHES FAILED.")
