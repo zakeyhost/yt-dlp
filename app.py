@@ -1,18 +1,15 @@
 import os
 import sys
 import requests
-import asyncio
-from playwright.async_api import async_playwright
+import time
+import yt_dlp
 
 TEST_VIDEO_URL = "https://www.youtube.com/watch?v=QhwR5f-7c5Q"
 OUTPUT_FILENAME = "test_video.mp4"
 
-def download_direct(url, filename):
-    print("⬇️ Streaming MP4 directly to GitHub Runner...")
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Referer": "https://downr.org/"
-    }
+def download_file(url, filename):
+    print(f"⬇️ Streaming MP4 directly to GitHub Runner...")
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     try:
         with requests.get(url, stream=True, headers=headers, timeout=60) as r:
             r.raise_for_status()
@@ -28,108 +25,174 @@ def download_direct(url, filename):
         print(f"❌ Direct stream failed: {e}")
     return False
 
-async def approach_1_downr_stealth():
+def approach_1_yt5s_backend():
     print("\n" + "="*50)
-    print("🤖 APPROACH 1: downr.org Scraper (Playwright Stealth Mode)")
+    print("🚀 APPROACH 1: YT5S Backend API (AJAX Bypass)")
     print("="*50)
-    
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=True,
-            args=["--disable-blink-features=AutomationControlled"]
-        )
-        context = await browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            viewport={"width": 1920, "height": 1080}
-        )
-        page = await context.new_page()
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            "X-Requested-With": "XMLHttpRequest",
+            "Origin": "https://yt5s.biz",
+            "Referer": "https://yt5s.biz/en117/"
+        }
         
-        try:
-            print("🌐 Navigating to downr.org...")
-            await page.goto("https://downr.org/", timeout=45000)
+        print("🔍 Step 1: Sending hidden backend search request...")
+        data = {"q": TEST_VIDEO_URL, "vt": "home"}
+        res = requests.post("https://yt5s.biz/api/ajaxSearch/index", data=data, headers=headers, timeout=15)
+        j = res.json()
+        
+        vid = j.get("vid")
+        links = j.get("links", {}).get("mp4", {})
+        
+        if not links:
+            print("❌ YT5S could not generate mp4 links.")
+            return False
             
-            print("⌨️ Injecting video URL into the search box...")
-            await page.get_by_placeholder("Paste URL here").fill(TEST_VIDEO_URL)
+        print("⚙️ Step 2: Parsing video qualities...")
+        best_k = None
+        for q in ["1080p", "720p", "480p", "auto"]:
+            for key, val in links.items():
+                if val.get("q") == q:
+                    best_k = val.get("k")
+                    print(f"🎯 Target quality locked: {q}")
+                    break
+            if best_k: break
             
-            print("🖱️ Clicking Download button...")
-            # STRICT MODE FIX: We target the main button and force it to only pick the first one it sees.
-            await page.locator('button', has_text="Download").first.click()
+        if not best_k:
+            best_k = list(links.values())[0].get("k")
             
-            print("⏳ Waiting for backend processing to generate links (Max 45s)...")
-            await page.wait_for_selector('text="mp4 ("', timeout=45000)
+        print("⏳ Step 3: Forcing server-side conversion...")
+        conv_data = {"vid": vid, "k": best_k}
+        
+        # Poll the server until the file is ready
+        for _ in range(10): 
+            conv_res = requests.post("https://yt5s.biz/api/ajaxConvert/convert", data=conv_data, headers=headers, timeout=15)
+            c_j = conv_res.json()
             
-            # Target the exact buttons from your screenshot, prioritizing 1080p
-            for quality in ["1080p", "720p", "480p", "360p"]:
-                print(f"🔍 Looking for 'mp4 ({quality})' button...")
+            if c_j.get("c_status") == "CONVERTING":
+                print("...Server is converting video... waiting 3 seconds...")
+                time.sleep(3)
+                continue
                 
-                # Look for an 'a' (link) tag that contains the exact text
-                element = page.locator(f'a:has-text("mp4 ({quality})")').first
+            dlink = c_j.get("dlink")
+            if dlink:
+                print("🔗 BINGO! Extracted RAW MP4 Link from backend!")
+                return download_file(dlink, OUTPUT_FILENAME)
+            else:
+                print("❌ Conversion failed or timed out on server.")
+                break
                 
-                if await element.count() > 0:
-                    download_url = await element.get_attribute("href")
-                    if download_url and "http" in download_url:
-                        print(f"🔗 BINGO! Extracted raw MP4 link ({quality})!")
-                        if download_direct(download_url, OUTPUT_FILENAME):
-                            return True
-                    
-            print("❌ Could not extract the hidden href link from the buttons.")
-        except Exception as e:
-            print(f"❌ downr.org Scraper failed: {e}")
-        finally:
-            await browser.close()
+    except Exception as e:
+        print(f"❌ YT5S Backend Error: {e}")
     return False
 
-async def approach_2_cobalt_web():
+def approach_2_yt1s_backend():
     print("\n" + "="*50)
-    print("🤖 APPROACH 2: Cobalt WEB UI (Dynamic Locator Fix)")
+    print("🚀 APPROACH 2: YT1S Backend API (AJAX Bypass)")
     print("="*50)
-    
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        )
-        page = await context.new_page()
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            "X-Requested-With": "XMLHttpRequest",
+            "Origin": "https://yt1s.com",
+            "Referer": "https://yt1s.com/en361"
+        }
         
-        try:
-            print("🌐 Navigating to Cobalt.tools web interface...")
-            await page.goto("https://cobalt.tools/", timeout=30000)
+        print("🔍 Step 1: Sending hidden backend search request...")
+        data = {"q": TEST_VIDEO_URL, "vt": "home"}
+        res = requests.post("https://yt1s.com/api/ajaxSearch/index", data=data, headers=headers, timeout=15)
+        j = res.json()
+        
+        vid = j.get("vid")
+        links = j.get("links", {}).get("mp4", {})
+        
+        if not links:
+            print("❌ YT1S could not generate mp4 links.")
+            return False
             
-            print("⌨️ Typing video URL into the box...")
-            # DYNAMIC FIX: Cobalt changed their input ID. This finds ANY url input box.
-            await page.locator('input[type="url"], input[name="url"], input').first.fill(TEST_VIDEO_URL)
-            await page.keyboard.press("Enter")
-            print("⏳ Waiting for processing (bypassing CAPTCHAs natively)...")
+        print("⚙️ Step 2: Parsing video qualities...")
+        best_k = None
+        for q in ["1080p", "720p", "480p", "auto"]:
+            for key, val in links.items():
+                if val.get("q") == q:
+                    best_k = val.get("k")
+                    print(f"🎯 Target quality locked: {q}")
+                    break
+            if best_k: break
+            
+        if not best_k:
+            best_k = list(links.values())[0].get("k")
+            
+        print("⏳ Step 3: Forcing server-side conversion...")
+        conv_data = {"vid": vid, "k": best_k}
+        
+        for _ in range(10): 
+            conv_res = requests.post("https://yt1s.com/api/ajaxConvert/convert", data=conv_data, headers=headers, timeout=15)
+            c_j = conv_res.json()
+            
+            if c_j.get("c_status") == "CONVERTING":
+                print("...Server is converting video... waiting 3 seconds...")
+                time.sleep(3)
+                continue
+                
+            dlink = c_j.get("dlink")
+            if dlink:
+                print("🔗 BINGO! Extracted RAW MP4 Link from backend!")
+                return download_file(dlink, OUTPUT_FILENAME)
+            else:
+                print("❌ Conversion failed or timed out on server.")
+                break
+                
+    except Exception as e:
+        print(f"❌ YT1S Backend Error: {e}")
+    return False
 
-            # Wait for the download to automatically trigger
-            async with page.expect_download(timeout=60000) as download_info:
-                download = await download_info.value
-                print(f"⬇️ Intercepted Download! Saving to {OUTPUT_FILENAME}...")
-                await download.save_as(OUTPUT_FILENAME)
-
-            if os.path.exists(OUTPUT_FILENAME):
-                file_size_mb = os.path.getsize(OUTPUT_FILENAME) / (1024 * 1024)
-                print(f"✅ SUCCESS! Playwright extracted the video. Size: {file_size_mb:.2f} MB")
-                return True
-        except Exception as e:
-            print(f"❌ Cobalt Web Scraper failed: {e}")
-        finally:
-            await browser.close()
+def approach_3_ytdlp_ios_spoof():
+    print("\n" + "="*50)
+    print("⚔️ APPROACH 3: yt-dlp (iOS Client Spoofing - NO COOKIES)")
+    print("="*50)
+    # Sometimes cookies flag the account. This approach strips cookies entirely 
+    # and forces YouTube to treat the scraper like an old iPhone app, which has lighter bot-checks.
+    ydl_opts = {
+        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+        'outtmpl': OUTPUT_FILENAME,
+        'merge_output_format': 'mp4',
+        'extractor_args': {'youtube': ['player_client=ios,web']},
+        'quiet': False,
+        'no_warnings': True,
+    }
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([TEST_VIDEO_URL])
+            
+        if os.path.exists(OUTPUT_FILENAME) and os.path.getsize(OUTPUT_FILENAME) > 1024:
+            file_size_mb = os.path.getsize(OUTPUT_FILENAME) / (1024 * 1024)
+            print(f"✅ SUCCESS! yt-dlp iOS spoof bypassed the bot-check! Size: {file_size_mb:.2f} MB")
+            return True
+    except Exception as e:
+        print(f"❌ yt-dlp iOS spoof failed: {e}")
+        
     return False
 
 def main():
-    print(f"🚀 Starting STEALTH WEB-SCRAPER test for: {TEST_VIDEO_URL}\n")
+    print(f"🚀 Starting DIRECT BACKEND AJAX test for: {TEST_VIDEO_URL}\n")
     
     if os.path.exists(OUTPUT_FILENAME):
         os.remove(OUTPUT_FILENAME)
         
-    if asyncio.run(approach_1_downr_stealth()):
+    if approach_1_yt5s_backend():
         sys.exit(0)
         
-    if asyncio.run(approach_2_cobalt_web()):
+    if approach_2_yt1s_backend():
         sys.exit(0)
         
-    print("\n💀 ALL BROWSER-SCRAPING APPROACHES FAILED.")
+    if approach_3_ytdlp_ios_spoof():
+        sys.exit(0)
+        
+    print("\n💀 ALL BACKEND APPROACHES FAILED.")
 
 if __name__ == "__main__":
     main()
