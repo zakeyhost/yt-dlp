@@ -1,4 +1,4 @@
-name: Ultimate Repo Compilation Test
+name: Phantom Handshake Downloader
 
 on:
   workflow_dispatch:
@@ -11,26 +11,20 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v3
 
-      - name: Override GitHub DNS
-        run: |
-          sudo bash -c 'echo "nameserver 8.8.8.8" > /etc/resolv.conf'
-          sudo bash -c 'echo "nameserver 1.1.1.1" >> /etc/resolv.conf'
-
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
 
-      - name: Install FFmpeg & Tor
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Install Python Dependencies & Browsers
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg tor
-          sudo systemctl start tor
+          pip install -r requirements.txt
+          playwright install chromium
 
-      - name: Install Python Dependencies
-        run: pip install -r requirements.txt
-
-      - name: Run The Master Script
+      - name: Run Phantom Downloader
         run: python app.py
 
       - name: Upload Video Artifact
