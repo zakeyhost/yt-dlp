@@ -1,7 +1,7 @@
-name: YT-DLP Isolated Test
+name: YT-DLP Ghost Downloader
 
 on:
-  workflow_dispatch: # Allows you to run this manually
+  workflow_dispatch:
 
 jobs:
   test-download:
@@ -16,17 +16,17 @@ jobs:
         with:
           python-version: '3.11'
 
-      # Install FFmpeg (Required by yt-dlp to merge high-quality video and audio)
       - name: Install FFmpeg
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
-      - name: Install Python Dependencies
-        run: pip install -r requirements.txt
+      - name: Install Python Dependencies & Nightly yt-dlp
+        run: |
+          pip install -r requirements.txt
+          pip install --pre -U "yt-dlp[default]"
 
-      - name: Run Download Script
+      - name: Run Ghost Downloader Script
         run: python app.py
 
-      # Upload the downloaded video so you can view it on your PC
       - name: Upload Video Artifact
         if: success()
         uses: actions/upload-artifact@v4
