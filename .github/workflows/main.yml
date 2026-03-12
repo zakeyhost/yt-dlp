@@ -1,4 +1,4 @@
-name: Browser Scraper Test
+name: Backend AJAX Test
 
 on:
   workflow_dispatch:
@@ -16,12 +16,13 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Python Dependencies & Chromium
-        run: |
-          pip install -r requirements.txt
-          playwright install chromium
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
-      - name: Run Web Scraper Downloader
+      - name: Install Python Dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Downloader
         run: python app.py
 
       - name: Upload Video Artifact
