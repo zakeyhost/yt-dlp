@@ -1,30 +1,18 @@
 import os
 import sys
-import socket
 import time
 import requests
 from curl_cffi import requests as cffi_requests
 import asyncio
 from playwright.async_api import async_playwright
-from playwright_stealth import stealth # <--- FIXED IMPORT
 
 TEST_VIDEO_URL = "https://www.youtube.com/watch?v=QhwR5f-7c5Q"
 TEST_VIDEO_ID = "QhwR5f-7c5Q"
 OUTPUT_FILENAME = "test_video.mp4"
 
-# =====================================================================
-# THE PHANTOM BYPASS: DNS MONKEYPATCHING
-# =====================================================================
-original_getaddrinfo = socket.getaddrinfo
-
-def patched_getaddrinfo(*args, **kwargs):
-    domain = args[0]
-    if domain == 'api.cobalt.tools': return original_getaddrinfo('104.21.73.46', *args[1:], **kwargs)
-    if domain == 'cobalt.tools': return original_getaddrinfo('104.21.73.46', *args[1:], **kwargs)
-    if domain == 'yt5s.biz': return original_getaddrinfo('104.21.31.29', *args[1:], **kwargs)
-    return original_getaddrinfo(*args, **kwargs)
-
-socket.getaddrinfo = patched_getaddrinfo
+def clean_file():
+    if os.path.exists(OUTPUT_FILENAME):
+        os.remove(OUTPUT_FILENAME)
 
 def verify_success(method_name):
     if os.path.exists(OUTPUT_FILENAME) and os.path.getsize(OUTPUT_FILENAME) > 500000:
@@ -33,91 +21,115 @@ def verify_success(method_name):
         return True
     return False
 
-def clean_file():
-    if os.path.exists(OUTPUT_FILENAME):
-        os.remove(OUTPUT_FILENAME)
-
-def stream_download(url, filename):
+def stream_download(url, filename, headers=None):
     print("⬇️ Streaming MP4 directly to GitHub Runner...")
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    if not headers:
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     try:
         with cffi_requests.get(url, stream=True, headers=headers, impersonate="chrome120", timeout=60) as r:
             r.raise_for_status()
             with open(filename, 'wb') as f:
-                for chunk in r.iter_content(chunk_size=8192): f.write(chunk)
+                for chunk in r.iter_content(chunk_size=8192):
+                    f.write(chunk)
         return True
-    except Exception as e: print(f"❌ Direct stream failed: {e}")
+    except Exception as e:
+        print(f"❌ Direct stream failed: {e}")
     return False
 
 # =====================================================================
-# APPROACH 1: Cobalt API (DNS Patched + Chrome Spoofed)
+# APPROACH 1: The Invidious Network (Decentralized YouTube)
 # =====================================================================
-def approach_1_cobalt_api():
+def approach_1_invidious():
     print("\n" + "="*60)
-    print("👻 APPROACH 1: Cobalt API (DNS Monkeypatch + Chrome Spoofing)")
+    print("🌍 APPROACH 1: Invidious Decentralized API (Immune to Cloudflare)")
     try:
-        headers = {
-            "Accept": "application/json", "Content-Type": "application/json",
-            "Origin": "https://cobalt.tools", "Referer": "https://cobalt.tools/",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        }
-        print("🔌 Sending stealth request to Cobalt Backend...")
-        res = cffi_requests.post("https://api.cobalt.tools/api/json", json={"url": TEST_VIDEO_URL, "vQuality": "1080"}, headers=headers, impersonate="chrome120", timeout=15)
-        if res.status_code in [200, 201, 202] and 'url' in res.json():
-            print("🔗 Cobalt extracted the raw MP4 link!")
-            stream_download(res.json()['url'], OUTPUT_FILENAME)
-            return verify_success("Cobalt API DNS Patched")
-        print(f"⚠️ Cobalt rejected request: {res.status_code} - {res.text[:100]}")
-    except Exception as e: print(f"❌ Cobalt API Failed: {e}")
+        instances = [
+            "https://invidious.jing.rocks", 
+            "https://vid.puffyan.us", 
+            "https://invidious.nerdvpn.de",
+            "https://invidious.perennialte.ch", 
+            "https://yewtu.be"
+        ]
+        for instance in instances:
+            print(f"   -> Pinging backend: {instance}...")
+            try:
+                res = requests.get(f"{instance}/api/v1/videos/{TEST_VIDEO_ID}", timeout=10)
+                if res.status_code == 200:
+                    data = res.json()
+                    formats = data.get("formatStreams", [])
+                    if formats:
+                        # Grab the best MP4 available
+                        best_stream = [f for f in formats if 'mp4' in f.get('type', '') and f.get('url')]
+                        if best_stream:
+                            url = best_stream[-1]['url']
+                            print("🔗 Invidious Network generated direct MP4 link!")
+                            stream_download(url, OUTPUT_FILENAME)
+                            if verify_success("Invidious Network"): return True
+            except: pass
+    except Exception as e: print(f"❌ Invidious Failed: {e}")
     return False
 
 # =====================================================================
-# APPROACH 2: Playwright Stealth (Fully Masked Browser)
+# APPROACH 2: downr.org Playwright (Native Stealth)
 # =====================================================================
-async def approach_2_playwright_stealth():
+async def approach_2_playwright_downr():
     print("\n" + "="*60)
-    print("🤖 APPROACH 2: Cobalt Web UI (Playwright + Stealth Plugin)")
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-        page = await context.new_page()
-        
-        # APPLYING FIXED STEALTH PLUGIN
-        await stealth(page)
-        
-        try:
-            print("🌐 Navigating to Cobalt UI...")
-            await page.goto("https://cobalt.tools/", timeout=30000)
-            await page.locator('input[name="url"], input[type="url"]').first.fill(TEST_VIDEO_URL)
-            await page.keyboard.press("Enter")
+    print("🤖 APPROACH 2: downr.org Scraper (Native Playwright Stealth)")
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True, args=["--disable-blink-features=AutomationControlled"])
+            context = await browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+            page = await context.new_page()
             
-            print("⏳ Waiting for download trigger...")
-            async with page.expect_download(timeout=45000) as download_info:
-                download = await download_info.value
-                print(f"⬇️ Intercepted file! Saving to disk...")
-                await download.save_as(OUTPUT_FILENAME)
-            return verify_success("Playwright Stealth UI")
-        except Exception as e: print(f"❌ Playwright Failed: {str(e).splitlines()[0]}")
-        finally: await browser.close()
+            # Native stealth override injected directly into the browser
+            await page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+            
+            print("🌐 Navigating to downr.org...")
+            await page.goto("https://downr.org/", timeout=30000)
+            
+            print("⌨️ Injecting video URL...")
+            await page.locator('input[placeholder="Paste URL here"]').fill(TEST_VIDEO_URL)
+            await page.locator('button', has_text="Download").first.click()
+            
+            print("⏳ Waiting for backend processing to generate links (Max 45s)...")
+            await page.wait_for_selector('text="mp4 ("', timeout=45000)
+            
+            for quality in ["1080p", "720p", "480p", "360p"]:
+                print(f"🔍 Looking for 'mp4 ({quality})' button...")
+                element = page.locator(f'a:has-text("mp4 ({quality})")').first
+                if await element.count() > 0:
+                    download_url = await element.get_attribute("href")
+                    if download_url and "http" in download_url:
+                        print(f"🔗 BINGO! Extracted raw MP4 link ({quality})!")
+                        stream_download(download_url, OUTPUT_FILENAME, {"Referer": "https://downr.org/"})
+                        if verify_success("downr.org Scraper"): return True
+    except Exception as e: print(f"❌ Playwright Failed: {str(e).splitlines()[0]}")
     return False
 
 # =====================================================================
-# APPROACH 3: Free Proxy + Cobalt API
+# APPROACH 3: Cobalt API via Auto-Scraped Proxies
 # =====================================================================
-def approach_3_proxy_api():
+def approach_3_proxy_cobalt():
     print("\n" + "="*60)
     print("🕵️ APPROACH 3: Cobalt API via Public Free Proxies")
     try:
-        proxies = requests.get("https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt", timeout=10).text.strip().split('\n')
+        print("🔍 Fetching fresh proxy list...")
+        r = requests.get("https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt", timeout=10)
+        proxies = r.text.strip().split('\n')
         import random
         random.shuffle(proxies)
         
-        for proxy in proxies[:5]:
+        headers = {
+            "Accept": "application/json", "Content-Type": "application/json",
+            "Origin": "https://cobalt.tools", "User-Agent": "Mozilla/5.0"
+        }
+        payload = {"url": TEST_VIDEO_URL, "vQuality": "1080"}
+        
+        for proxy in proxies[:10]:
             proxy_url = f"http://{proxy.strip()}"
             print(f"   -> Tunneling API request through: {proxy_url}")
             try:
-                headers = {"Accept": "application/json", "Content-Type": "application/json", "Origin": "https://cobalt.tools", "User-Agent": "Mozilla/5.0"}
-                res = cffi_requests.post("https://api.cobalt.tools/api/json", json={"url": TEST_VIDEO_URL, "vQuality": "1080"}, headers=headers, impersonate="chrome120", proxies={"http": proxy_url, "https": proxy_url}, timeout=10)
+                res = requests.post("https://api.cobalt.tools/api/json", json=payload, headers=headers, proxies={"http": proxy_url, "https": proxy_url}, timeout=10)
                 if res.status_code in [200, 201] and 'url' in res.json():
                     print("🔗 Proxy successfully pierced the firewall!")
                     stream_download(res.json()['url'], OUTPUT_FILENAME)
@@ -126,41 +138,13 @@ def approach_3_proxy_api():
     except Exception as e: print(f"❌ Proxy approach failed: {e}")
     return False
 
-# =====================================================================
-# APPROACH 4: The Invidious Network (Decentralized YouTube)
-# =====================================================================
-def approach_4_invidious():
-    print("\n" + "="*60)
-    print("🌍 APPROACH 4: Invidious Decentralized API")
-    print("Querying public Invidious instances...")
-    instances = ["https://invidious.jing.rocks", "https://iv.melmac.space", "https://invidious.perennialte.ch", "https://yewtu.be"]
-    
-    for instance in instances:
-        print(f"   -> Pinging {instance}...")
-        try:
-            res = requests.get(f"{instance}/api/v1/videos/{TEST_VIDEO_ID}", timeout=10)
-            if res.status_code == 200:
-                data = res.json()
-                formats = data.get("formatStreams", [])
-                if formats:
-                    # Find highest quality MP4
-                    best_stream = [f for f in formats if 'mp4' in f.get('type', '')]
-                    if best_stream:
-                        url = best_stream[-1]['url']
-                        print("🔗 Invidious Network generated direct MP4 link!")
-                        stream_download(url, OUTPUT_FILENAME)
-                        if verify_success("Invidious Network"): return True
-        except: pass
-    return False
-
 def main():
-    print(f"🚀 FIRING PHANTOM HANDSHAKE TEST FOR: {TEST_VIDEO_URL}\n")
+    print(f"🚀 FIRING FALLBACK TEST FOR: {TEST_VIDEO_URL}\n")
     
     approaches = [
-        approach_1_cobalt_api,
-        lambda: asyncio.run(approach_2_playwright_stealth()),
-        approach_4_invidious,
-        approach_3_proxy_api
+        approach_1_invidious,
+        lambda: asyncio.run(approach_2_playwright_downr()),
+        approach_3_proxy_cobalt
     ]
     
     for approach in approaches:
