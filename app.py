@@ -2,7 +2,7 @@ import os
 import sys
 import yt_dlp
 
-TEST_VIDEO_URL = "https://www.youtube.com/watch?v=QhwR5f-7c5Q"
+TEST_VIDEO_URL = "https://www.youtube.com/watch?v=S0HLXfeKtvQ"
 OUTPUT_FILENAME = "test_video.mp4"
 
 def clean_file():
