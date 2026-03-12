@@ -1,101 +1,126 @@
 import os
-import time
+import sys
+import requests
 import yt_dlp
 
-# Configurations
-YOUTUBE_COOKIES_PATH = "cookies_yt.txt"
 TEST_VIDEO_URL = "https://www.youtube.com/watch?v=QhwR5f-7c5Q"
+VIDEO_ID = "QhwR5f-7c5Q"
 OUTPUT_FILENAME = "test_video.mp4"
+YOUTUBE_COOKIES_PATH = "cookies_yt.txt"
 
-def cleanup_partial_files():
-    """Deletes any broken/partial files from a failed attempt before trying the next one."""
-    for f in os.listdir('.'):
-        if f.startswith('test_video'):
-            try:
-                os.remove(f)
-            except:
-                pass
+def download_file(url, filename):
+    print("⬇️ Streaming MP4 directly to GitHub Runner...")
+    with requests.get(url, stream=True) as r:
+        r.raise_for_status()
+        with open(filename, 'wb') as f:
+            for chunk in r.iter_content(chunk_size=8192):
+                f.write(chunk)
+    
+    if os.path.exists(filename) and os.path.getsize(filename) > 0:
+        file_size_mb = os.path.getsize(filename) / (1024 * 1024)
+        print(f"✅ SUCCESS! Video secured. Size: {file_size_mb:.2f} MB")
+        return True
+    return False
+
+def approach_1_cobalt():
+    print("\n" + "="*50)
+    print("👻 APPROACH 1: Cobalt API (Off-Server Proxy)")
+    print("="*50)
+    
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json"
+    }
+    payload = {"url": TEST_VIDEO_URL, "vQuality": "1080"}
+    
+    # List of public Cobalt instances to try
+    instances = ["https://api.cobalt.tools", "https://cobalt-api.kwiateks.com", "https://co.wuk.sh"]
+    
+    for instance in instances:
+        print(f"🔌 Connecting to Cobalt instance: {instance}...")
+        try:
+            res = requests.post(f"{instance}/api/json" if "tools" in instance else instance, json=payload, headers=headers, timeout=15)
+            if res.status_code == 200:
+                data = res.json()
+                if 'url' in data:
+                    print("✅ Cobalt successfully bypassed YouTube! Extracted raw MP4 link.")
+                    return download_file(data['url'], OUTPUT_FILENAME)
+            else:
+                print(f"⚠️ Instance failed with status: {res.status_code}")
+        except Exception as e:
+            print(f"⚠️ Instance unreachable: {e}")
+            
+    print("❌ All Cobalt instances blocked or overloaded.")
+    return False
+
+def approach_2_invidious():
+    print("\n" + "="*50)
+    print("🕵️ APPROACH 2: Invidious API (Ghost Network)")
+    print("="*50)
+    
+    instances = ["https://invidious.perennialte.ch", "https://iv.melmac.space"]
+    
+    for instance in instances:
+        print(f"🔌 Connecting to Invidious instance: {instance}...")
+        try:
+            res = requests.get(f"{instance}/api/v1/videos/{VIDEO_ID}", timeout=15)
+            if res.status_code == 200:
+                data = res.json()
+                streams = data.get('formatStreams', [])
+                if streams:
+                    best_stream = streams[-1] # Usually 720p/1080p MP4
+                    url = best_stream.get('url')
+                    print("✅ Invidious successfully extracted the link!")
+                    return download_file(url, OUTPUT_FILENAME)
+        except Exception as e:
+            print(f"⚠️ Instance failed: {e}")
+            
+    print("❌ Invidious extraction failed.")
+    return False
+
+def approach_3_nightly_yt_dlp():
+    print("\n" + "="*50)
+    print("⚔️ APPROACH 3: Bleeding-Edge Nightly yt-dlp + Cookies")
+    print("="*50)
+    
+    ydl_opts = {
+        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+        'outtmpl': OUTPUT_FILENAME,
+        'merge_output_format': 'mp4',
+        'quiet': False,
+        'no_warnings': True,
+    }
+    
+    if os.path.exists(YOUTUBE_COOKIES_PATH):
+        print("🍪 Injecting cookies_yt.txt...")
+        ydl_opts['cookiefile'] = YOUTUBE_COOKIES_PATH
+        
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([TEST_VIDEO_URL])
+            
+        if os.path.exists(OUTPUT_FILENAME) and os.path.getsize(OUTPUT_FILENAME) > 0:
+            file_size_mb = os.path.getsize(OUTPUT_FILENAME) / (1024 * 1024)
+            print(f"✅ SUCCESS! Nightly yt-dlp bypassed the bot-check! Size: {file_size_mb:.2f} MB")
+            return True
+    except Exception as e:
+        print(f"❌ yt-dlp failed: {e}")
+        
+    return False
 
 def main():
-    print(f"🚀 Starting BRUTE-FORCE yt-dlp test for video: {TEST_VIDEO_URL}")
-    print("🛡️ Loading 12 Backup Approaches...\n")
+    print(f"🚀 Starting GHOST DOWNLOADER test for: {TEST_VIDEO_URL}\n")
     
-    # 10+ UNIQUE BYPASS APPROACHES
-    # We test different clients (Android, iOS, TV, VR, Web) and toggle Cookies on/off.
-    approaches = [
-        {"name": "1. Android App + Cookies", "client": "android", "use_cookies": True},
-        {"name": "2. iOS App + Cookies", "client": "ios", "use_cookies": True},
-        {"name": "3. Smart TV App + Cookies", "client": "tv", "use_cookies": True},
-        {"name": "4. Mobile Web + Cookies", "client": "mweb", "use_cookies": True},
-        {"name": "5. Safari Web + Cookies", "client": "web_safari", "use_cookies": True},
-        {"name": "6. Android VR + Cookies", "client": "android_vr", "use_cookies": True},
-        {"name": "7. Android Creator App + Cookies", "client": "android_creator", "use_cookies": True},
-        {"name": "8. TV Embedded + Cookies", "client": "tv_embedded", "use_cookies": True},
-        {"name": "9. Internal Combo Fallback + Cookies", "client": "android,ios,tv,mweb", "use_cookies": True},
-        {"name": "10. Android App (INCOGNITO / NO COOKIES)", "client": "android", "use_cookies": False},
-        {"name": "11. iOS App (INCOGNITO / NO COOKIES)", "client": "ios", "use_cookies": False},
-        {"name": "12. Smart TV App (INCOGNITO / NO COOKIES)", "client": "tv", "use_cookies": False},
-    ]
-
-    success = False
-
-    for i, approach in enumerate(approaches):
-        print("=" * 60)
-        print(f"🔄 ATTEMPT {i+1}/12: Using Strategy -> [ {approach['name']} ]")
-        print("=" * 60)
+    if approach_1_cobalt():
+        sys.exit(0)
         
-        cleanup_partial_files() # Wipe broken files from previous failures
-
-        # Base yt-dlp configurations
-        ydl_opts = {
-            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-            'outtmpl': OUTPUT_FILENAME,
-            'merge_output_format': 'mp4',
-            'quiet': False,
-            'no_warnings': True,
-            'cachedir': False, # Prevent yt-dlp from remembering previous bot-blocks
-            
-            # Inject the specific client disguise for this approach
-            'extractor_args': {'youtube': [f'player_client={approach["client"]}']},
-            'sleep_interval': 2, # Wait 2 seconds to mimic human connection
-        }
-
-        # Inject cookies only if this approach calls for it
-        if approach["use_cookies"] and os.path.exists(YOUTUBE_COOKIES_PATH):
-            print("🍪 Injecting cookies_yt.txt...")
-            ydl_opts['cookiefile'] = YOUTUBE_COOKIES_PATH
-        elif approach["use_cookies"]:
-            print("⚠️ Approach requested cookies, but cookies_yt.txt is missing. Proceeding anyway...")
-        else:
-            print("🕵️ Stripping cookies (Incognito mode)...")
-
-        try:
-            print(f"⬇️ Firing yt-dlp downloader...")
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([TEST_VIDEO_URL])
-            
-            # Verify it actually downloaded a file
-            if os.path.exists(OUTPUT_FILENAME) and os.path.getsize(OUTPUT_FILENAME) > 0:
-                print(f"\n✅ SUCCESS! Approach [{approach['name']}] completely bypassed the block!")
-                success = True
-                break # EXITS THE LOOP! We got the video!
-            else:
-                print(f"❌ yt-dlp finished, but the file is missing or empty. Moving to next backup...")
-                
-        except Exception as e:
-            print(f"\n❌ Approach [{approach['name']}] Blocked or Failed.")
-            print(f"Error: {e}")
-            print("⏳ Switching to next backup method in 3 seconds...\n")
-            time.sleep(3) # Short pause so YouTube doesn't completely IP ban the runner
-
-    print("\n" + "=" * 60)
-    if success:
-        file_size_mb = os.path.getsize(OUTPUT_FILENAME) / (1024 * 1024)
-        print(f"🎉 DOWNLOAD SECURED: {file_size_mb:.2f} MB")
-        print("GitHub Actions will now upload this file as an artifact so you can download it.")
-    else:
-        print("💀 ALL 12 APPROACHES FAILED.")
-        print("YouTube is heavily blocking this datacenter IP. We may need to use a proxy network.")
+    if approach_2_invidious():
+        sys.exit(0)
+        
+    if approach_3_nightly_yt_dlp():
+        sys.exit(0)
+        
+    print("\n💀 ALL APPROACHES FAILED. YouTube's Datacenter IP ban is impenetrable on this video.")
 
 if __name__ == "__main__":
     main()
