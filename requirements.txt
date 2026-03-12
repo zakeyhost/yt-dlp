@@ -1,6 +1,4 @@
-yt-dlp
-pytubefix
-pytube
 requests
 curl_cffi
-bgutil-ytdlp-pot-provider
+playwright
+playwright-stealth
