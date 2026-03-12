@@ -1,4 +1,4 @@
-name: The Piped Network Bypass
+name: WARP VPN Downloader
 
 on:
   workflow_dispatch:
@@ -11,20 +11,36 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v3
 
-      - name: Override GitHub DNS (Bypass Domain Blocks)
+      - name: Show Original GitHub IP
+        run: curl -4 ifconfig.me
+
+      - name: Install Cloudflare WARP VPN (Physical IP Override)
         run: |
-          sudo bash -c 'echo "nameserver 8.8.8.8" > /etc/resolv.conf'
-          sudo bash -c 'echo "nameserver 1.1.1.1" >> /etc/resolv.conf'
+          curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/cloudflare-client.list
+          sudo apt-get update && sudo apt-get install -y cloudflare-warp
+          # Setup and connect the VPN
+          warp-cli --accept-tos registration new
+          warp-cli --accept-tos connect
+          sleep 10
+
+      - name: Show New VPN IP Address
+        run: curl -4 ifconfig.me
 
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
 
-      - name: Install Python Dependencies
-        run: pip install -r requirements.txt
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
-      - name: Run Piped Downloader Script
+      - name: Install Python Dependencies (Using Bleeding Edge yt-dlp)
+        run: |
+          pip install -r requirements.txt
+          pip install -U --pre "yt-dlp[default]"
+
+      - name: Run VPN Downloader Script
         run: python app.py
 
       - name: Upload Video Artifact
