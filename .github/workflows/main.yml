@@ -1,4 +1,4 @@
-name: YT-DLP Ghost Downloader
+name: Browser Scraper Test
 
 on:
   workflow_dispatch:
@@ -16,15 +16,12 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install FFmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
-
-      - name: Install Python Dependencies & Nightly yt-dlp
+      - name: Install Python Dependencies & Chromium
         run: |
           pip install -r requirements.txt
-          pip install --pre -U "yt-dlp[default]"
+          playwright install chromium
 
-      - name: Run Ghost Downloader Script
+      - name: Run Web Scraper Downloader
         run: python app.py
 
       - name: Upload Video Artifact
